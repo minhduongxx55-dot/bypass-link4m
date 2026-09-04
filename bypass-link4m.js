@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bypass Link4m - By Chungdeptraivcl
 // @namespace    http://tampermonkey.net/
-// @version      17.1
+// @version      1.0.1
 // @description  Bắt lỗi mạng chi tiết, tự động thử HTTP nếu HTTPS lỗi, tự báo lỗi khi web đích bị chặn
 // @icon         https://png.pngtree.com/png-vector/20260105/ourmid/pngtree-pointing-cat-meme-sticker-vector-cute-illustration-png-image_18426970.webp
 // @match        https://link4m.org/go/*
