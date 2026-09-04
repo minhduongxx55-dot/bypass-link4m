@@ -2,8 +2,7 @@
 
 Tác giả: © Chungdeptraivcl
 Phiên bản: 1.0.1
-Kiến trúc: Client-Server kết hợp (Tampermonkey Userscript + Node.js/Replit
-Mapping API)
+Kiến trúc: Client-Server kết hợp (Tampermonkey Userscript + Node.js/Replit Mapping API)
 
 Hệ thống tự động hóa hoàn tất các liên kết rút gọn Link4m theo cơ chế chạy ngầm (Background Task). Hệ thống tự động bóc tách mã định danh chiến dịch, tra cứu trang đích từ Server riêng, thực thi đếm ngược ngầm, sinh chữ ký số 96 hex, nhận mã và gõ mã mô phỏng người dùng thật.
 
