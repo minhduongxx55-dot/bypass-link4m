@@ -115,5 +115,5 @@ Khi Userscript gặp một nhiệm vụ Link4m chưa từng lưu, nó sẽ gửi
 3. Lỗi CORS khi kết nối Server Replit
 
   - Nguyên nhân: Dùng fetch() thông thường bị trình duyệt chặn cross-origin.
-  - Xử lý: Bản Userscript v16.5 đã thay thế hoàn toàn bằng request()
+  - Xử lý: Bản Userscript v1.0.1 đã thay thế hoàn toàn bằng request()
     (GM_xmlhttpRequest) để bỏ qua 100% chính sách CORS của trình duyệt.
