@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bypass Link4m - By Chungdeptraivcl
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
-// @description  ditme link4m
+// @version      17.1
+// @description  Bắt lỗi mạng chi tiết, tự động thử HTTP nếu HTTPS lỗi, tự báo lỗi khi web đích bị chặn
 // @icon         https://png.pngtree.com/png-vector/20260105/ourmid/pngtree-pointing-cat-meme-sticker-vector-cute-illustration-png-image_18426970.webp
 // @match        https://link4m.org/go/*
 // @match        https://link4m.net/go/*
@@ -501,7 +501,7 @@
         }, 400);
     }
 
-    // ---------- 5. LOGIC HỆ THỐNG & LUỒNG NGẦM ----------
+    // ---------- 5. LOGIC HỆ THỐNG & BÓC TÁCH THỜI GIAN ----------
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             const r = Math.random() * 16 | 0;
@@ -522,6 +522,18 @@
     function decodeHexEscapes(str) {
         if (!str) return '';
         return str.replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    }
+
+    function extractLink4mWaitTime(htmlText) {
+        if (!htmlText) return 60;
+        const match = htmlText.match(/chờ\s*(\d+)\s*(?:giây|s)/i);
+        if (match) {
+            const seconds = parseInt(match[1], 10);
+            if (seconds >= 30 && seconds <= 180) {
+                return seconds;
+            }
+        }
+        return 60;
     }
 
     function extractWidgetKeyFromHtml(htmlText) {
@@ -549,17 +561,27 @@
         return '';
     }
 
-    // Hàm request sử dụng GM_xmlhttpRequest bỏ qua triệt để lỗi CORS
+    // Hàm request được chuẩn hóa để ném Error rõ ràng (tránh bị lỗi Object)
     function request(method, url, data = null, headers = {}) {
         return new Promise((resolve, reject) => {
             const opts = {
                 method: method,
                 url: url,
-                headers: headers,
+                headers: Object.assign({
+                    'User-Agent': navigator.userAgent,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }, headers),
+                timeout: 25000,
                 onload: (resp) => {
                     resolve({ status: resp.status, text: resp.responseText, headers: resp.responseHeaders });
                 },
-                onerror: (err) => reject(err)
+                onerror: (err) => {
+                    const statusText = err?.statusText || (err?.status === 0 ? 'Mạng lỗi / Bị chặn kết nối (Status 0)' : `HTTP ${err?.status}`);
+                    reject(new Error(`${statusText} khi kết nối tới: ${url}`));
+                },
+                ontimeout: () => {
+                    reject(new Error(`Timeout quá 25s khi kết nối tới: ${url}`));
+                }
             };
             if (data) {
                 opts.data = typeof data === 'string' ? data : JSON.stringify(data);
@@ -679,13 +701,16 @@
         currentDisplayId = display_id;
         currentAlias = aliasMatch ? aliasMatch[1] : '';
 
+        // Tự động nhận diện số giây Link4m yêu cầu (ở trường hợp này là 120s)
+        const link4mRequiredWait = extractLink4mWaitTime(html);
+        log(`⏱️ Thời gian Link4m yêu cầu: ${link4mRequiredWait}s`);
+
         setTimeout(renderCustomUI, 200);
 
         log(`🔍 Kiểm tra Campaign ID cố định: ${campaign_id}`);
         sendClickBeacon(campaign_id, display_id, prefix);
 
         try {
-            // SỬ DỤNG REQUEST() BỎ QUA HOÀN TOÀN CORS
             const resp = await request('GET', `${SERVER}/task/check?campaign_id=${encodeURIComponent(campaign_id)}`);
             let result = {};
             try {
@@ -703,7 +728,7 @@
                 const taskType = result.task_type || 'what_on';
                 log(`✅ TÌM THẤY URL: ${result.target_url} [Loại task: ${taskType}]`);
                 updateUIStatus('Đã tìm thấy nhiệm vụ', 'Bắt đầu luồng xử lý ngầm...');
-                await runFullBackground(result.target_url, campaign_id, prefix, taskType);
+                await runFullBackground(result.target_url, campaign_id, prefix, taskType, link4mRequiredWait);
                 return;
             }
 
@@ -713,8 +738,9 @@
             await createTask(campaign_id, prefix, images);
 
         } catch (err) {
-            error('Lỗi xử lý campaign:', err);
-            showNewTaskAlert(display_id, `Không thể kết nối Server Replit (${err.message}). Tự động báo lỗi...`);
+            const msg = err instanceof Error ? err.message : String(err);
+            error('Lỗi xử lý campaign:', msg);
+            showNewTaskAlert(display_id, `Không thể kết nối Server Replit (${msg}). Tự động báo lỗi...`);
         }
     }
 
@@ -762,7 +788,6 @@
         return Array.from(images);
     }
 
-    // Sử dụng request() thay vì fetch() để gửi task mới lên Server Replit
     async function createTask(campaign_id, prefix, images) {
         const payload = { campaign_id, prefix };
         if (images.length > 0) payload.images = images;
@@ -846,7 +871,7 @@
         return url.href;
     }
 
-    async function runFullBackground(targetUrl, campaign_id, prefix, taskType = 'what_on') {
+    async function runFullBackground(targetUrl, campaign_id, prefix, taskType = 'what_on', link4mRequiredWait = 60) {
         log(`🚀 Bắt đầu luồng ngầm cho: ${targetUrl} [task_type: ${taskType}]`);
 
         try {
@@ -856,12 +881,32 @@
                 cleanUrl = 'https://' + cleanUrl;
             }
 
-            let htmlResp = await request('GET', cleanUrl);
-            if (htmlResp.status !== 200) {
-                throw new Error(`Không thể tải target URL, status: ${htmlResp.status}`);
+            // Tải trang đích với cơ chế tự động thử lại bằng HTTP nếu HTTPS bị lỗi
+            let htmlResp;
+            try {
+                htmlResp = await request('GET', cleanUrl);
+            } catch (netErr) {
+                if (cleanUrl.startsWith('https://')) {
+                    const httpUrl = cleanUrl.replace('https://', 'http://');
+                    log(`⚠️ Không thể kết nối HTTPS, thử lại bằng HTTP: ${httpUrl}...`);
+                    try {
+                        htmlResp = await request('GET', httpUrl);
+                        cleanUrl = httpUrl;
+                    } catch (httpErr) {
+                        throw new Error(`Không thể kết nối trang đích (${netErr.message || 'Bị chặn mạng/AdBlock'})`);
+                    }
+                } else {
+                    throw new Error(`Không thể kết nối trang đích (${netErr.message || 'Bị chặn mạng/AdBlock'})`);
+                }
             }
+
+            if (!htmlResp || htmlResp.status !== 200) {
+                throw new Error(`Không thể tải trang đích, status: ${htmlResp?.status || 0}`);
+            }
+
             let html = htmlResp.text;
             let currentArticleUrl = cleanUrl;
+            log(`📄 Kích thước HTML: ${html.length} ký tự`);
 
             let key = extractWidgetKeyFromHtml(html);
 
@@ -887,12 +932,14 @@
                 }
 
                 if (subPostUrl) {
-                    const subResp = await request('GET', subPostUrl);
-                    if (subResp.status === 200) {
-                        html = subResp.text;
-                        currentArticleUrl = subPostUrl;
-                        key = extractWidgetKeyFromHtml(html);
-                    }
+                    try {
+                        const subResp = await request('GET', subPostUrl);
+                        if (subResp.status === 200) {
+                            html = subResp.text;
+                            currentArticleUrl = subPostUrl;
+                            key = extractWidgetKeyFromHtml(html);
+                        }
+                    } catch {}
                 }
             }
 
@@ -925,11 +972,13 @@
 
             const client_id = getClientId();
 
-            // ĐẾM NGƯỢC CHẶNG 1 (63s)
-            await countdownWithUI(63, 'Chặng 1: Đang đếm ngược lấy mã');
-
-            updateUIStatus('Chặng 1', 'Đang xác thực lấy Quest ID...');
+            log('📤 Gọi client.js khởi tạo phiên đếm giờ trên máy chủ...');
             const signature1 = await fetchSignature(finalWidgetDomain, key, client_id, traffic_session1, finalCode1, currentArticleUrl);
+
+            // BƯỚC 3: ĐẾM NGƯỢC CHẶNG 1 (Link4m yêu cầu: 120s -> đếm 124s an toàn)
+            const waitTime1 = Math.max(link4mRequiredWait, 60) + 4;
+            log(`⏳ Đếm ngược ngầm Chặng 1: ${waitTime1}s (gồm ${link4mRequiredWait}s Link4m + 4s an toàn)...`);
+            await countdownWithUI(waitTime1, 'Chặng 1: Đang đếm ngược lấy mã');
 
             const questUrl1 = buildQuestUrl(finalWidgetDomain, {
                 key,
@@ -942,34 +991,58 @@
                 href: targetHref
             });
 
-            const questResp = await request('GET', questUrl1, null, {
+            log('📤 Gửi yêu cầu chặng 1...');
+            let questResp = await request('GET', questUrl1, null, {
                 'Referer': currentArticleUrl,
                 'Origin': `https://${targetHostname}`
             });
 
-            let quest_id = null;
-            try {
-                const json = JSON.parse(questResp.text);
-                if (json.success === true) {
-                    quest_id = json.quest_id || json.id || null;
-                } else if (json.info === 'No Campaign') {
-                    error('Chiến dịch đối tác đã hết ngân sách (No Campaign)!');
-                    showNewTaskAlert(currentDisplayId, 'Chiến dịch đối tác đã hết ngân sách (No Campaign), Vui lòng đợi có nhiệm vụ hoặc đổi ip để tiếp tục...');
-                    return;
+            function parseQuestId(text) {
+                try {
+                    const json = JSON.parse(text);
+                    if (json.success === true) return json.quest_id || json.id || null;
+                } catch {
+                    const m = text.match(/["']?id["']?\s*[:=]\s*["']([^"']+)["']/i);
+                    if (m) return m[1];
                 }
-            } catch {
-                const match = questResp.text.match(/["']?id["']?\s*[:=]\s*["']([^"']+)["']/i);
-                quest_id = match ? match[1] : null;
+                return null;
+            }
+
+            let quest_id = parseQuestId(questResp.text);
+
+            if (!quest_id && questResp.text.includes("Không lấy được code")) {
+                log('⚠️ Chặng 1 chưa hết giờ, đang bù giờ thêm 15 giây...');
+                await countdownWithUI(15, 'Chặng 1: Đang bù giờ thêm');
+
+                questResp = await request('GET', questUrl1, null, { 'Referer': currentArticleUrl, 'Origin': `https://${targetHostname}` });
+                quest_id = parseQuestId(questResp.text);
+
+                if (!quest_id && questResp.text.includes("Không lấy được code")) {
+                    log('⚠️ Vẫn chưa đủ thời gian, bù giờ thêm 15 giây lần cuối...');
+                    await countdownWithUI(15, 'Chặng 1: Bù giờ lần cuối');
+                    questResp = await request('GET', questUrl1, null, { 'Referer': currentArticleUrl, 'Origin': `https://${targetHostname}` });
+                    quest_id = parseQuestId(questResp.text);
+                }
             }
 
             if (!quest_id) {
+                try {
+                    const json = JSON.parse(questResp.text);
+                    if (json.info === 'No Campaign') {
+                        error('Chiến dịch đối tác đã hết ngân sách (No Campaign)!');
+                        showNewTaskAlert(currentDisplayId, 'Chiến dịch đối tác đã hết ngân sách (No Campaign), Vui lòng đợi có nhiệm vụ hoặc đổi ip để tiếp tục...');
+                        return;
+                    }
+                } catch {}
                 error('Chi tiết lỗi Chặng 1:', questResp.text);
                 throw new Error('Không lấy được quest_id từ chặng 1');
             }
             log('✅ Quest ID nhận thành công:', quest_id);
 
-            // ĐẾM NGƯỢC CHẶNG 2 (20s)
-            await countdownWithUI(20, 'Chặng 2: Đang lấy mã mật khẩu');
+            // BƯỚC 4: ĐẾM NGƯỢC CHẶNG 2: 16 GIÂY
+            const waitTime2 = 16;
+            log(`⏳ Đếm ngược ngầm Chặng 2: ${waitTime2}s (quy chuẩn cố định máy chủ)...`);
+            await countdownWithUI(waitTime2, 'Chặng 2: Đang lấy mã mật khẩu');
 
             updateUIStatus('Chặng 2', 'Đang tải mã về...');
             const serviceResp2 = await request('GET', serviceUrl1, null, { 'Referer': currentArticleUrl });
@@ -996,22 +1069,31 @@
                 href: targetHref
             });
 
-            const pwdResp = await request('GET', questUrl2, null, {
+            let pwdResp = await request('GET', questUrl2, null, {
                 'Referer': currentArticleUrl,
                 'Origin': `https://${targetHostname}`
             });
 
-            let password = null;
-            try {
-                const json = JSON.parse(pwdResp.text);
-                if (json.success === true && json.html && json.html !== '-1') {
-                    password = json.html.trim();
-                } else {
-                    error('Chặng 2 không thành công:', json.info || json.message);
+            function parsePassword(text) {
+                try {
+                    const json = JSON.parse(text);
+                    if (json.success === true && json.html && json.html !== '-1') {
+                        return json.html.trim();
+                    }
+                } catch {
+                    const m = text.match(/["']?html["']?\s*[:=]\s*["']([^"']+)["']/i);
+                    if (m && m[1] !== '-1') return m[1].trim();
                 }
-            } catch {
-                const match = pwdResp.text.match(/["']?html["']?\s*[:=]\s*["']([^"']+)["']/i);
-                if (match && match[1] !== '-1') password = match[1].trim();
+                return null;
+            }
+
+            let password = parsePassword(pwdResp.text);
+
+            if (!password && pwdResp.text.includes("Không lấy được code")) {
+                log('⚠️ Chặng 2 cần thêm thời gian, chờ 10s...');
+                await countdownWithUI(10, 'Chặng 2: Chờ thêm thời gian');
+                pwdResp = await request('GET', questUrl2, null, { 'Referer': currentArticleUrl, 'Origin': `https://${targetHostname}` });
+                password = parsePassword(pwdResp.text);
             }
 
             if (!password || password.length < 4 || password.length > 10) {
@@ -1022,8 +1104,14 @@
             await handleAutoSubmitAfterCaptcha(password);
 
         } catch (err) {
-            error('❌ Lỗi luồng ngầm:', err);
-            updateUIStatus('Gặp lỗi', err.message);
+            const errorText = err instanceof Error ? err.message : (err?.error || err?.statusText || JSON.stringify(err) || 'Lỗi không xác định');
+            error('❌ Lỗi luồng ngầm:', errorText);
+            updateUIStatus('Gặp lỗi', errorText);
+
+            // Nếu trang web đích hoàn toàn bị chặn hoặc không truy cập được -> tự động báo lỗi Link4m để đổi task
+            if (errorText.includes('Không thể kết nối trang đích') || errorText.includes('Bị chặn')) {
+                showNewTaskAlert(currentDisplayId, `Không thể truy cập trang web đích (${targetUrl}). Hệ thống đang tự động báo lỗi đổi nhiệm vụ...`);
+            }
         }
     }
 
