@@ -9,12 +9,11 @@ Hệ thống tự động hóa hoàn tất các liên kết rút gọn Link4m th
 📌 Mục lục
 
 1.  Kiến trúc & Luồng hoạt động
-2.  Cài đặt & Khởi chạy Server Mapping
-3.  Hướng dẫn gán URL trên trang Admin
-4.  Cài đặt & Cấu hình Userscript
-5.  Quy trình sử dụng thực tế
-6.  Phân loại 2 loại Task (Task Types)
-7.  Các lỗi thường gặp & Cách xử lý
+2.  Hướng dẫn gán URL trên trang Admin
+3.  Cài đặt & Cấu hình Userscript
+4.  Quy trình sử dụng thực tế
+5.  Phân loại 2 loại Task (Task Types)
+6.  Các lỗi thường gặp & Cách xử lý
 
 🏗 Kiến trúc & Luồng hoạt động
 
