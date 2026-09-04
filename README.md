@@ -35,12 +35,12 @@ Hệ thống tự động hóa hoàn tất các liên kết rút gọn Link4m th
     - Nhận quest_id thành công                              - Tự động bắn POST /links/report báo lỗi
     - Chạy ngầm Chặng 2 (đếm ngược 20s)                                    │
     - Nhận mã mật khẩu thật                                                ▼
-    - Gõ phím như người thật vào ô input                    [ Bạn vào [Server api](https://userscript-mapping-server--tijawi6194.replit.app/)n để gán URL ]
+    - Gõ phím như người thật vào ô input                    [ Bạn vào [Server api] để gán URL ]
     - Chờ bạn giải reCAPTCHA (1 click)
     - Tự động gửi xác minh
     - HIỆN LINK GỐC + NÚT COPY & MỞ TAB MỚI
 
-✍️ Hướng dẫn gán URL trên trang https://userscript-mapping-server--tijawi6194.replit.app/
+✍️ Hướng dẫn gán URL trên trang server api: https://userscript-mapping-server--tijawi6194.replit.app/
 
 Khi Userscript gặp một nhiệm vụ Link4m chưa từng lưu, nó sẽ gửi toàn bộ ảnh hướng dẫn về server và hiển thị bảng chờ 600s. Bạn thực hiện gán link như sau:
 
