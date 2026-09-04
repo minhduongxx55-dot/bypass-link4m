@@ -28,17 +28,17 @@ Hệ thống tự động hóa hoàn tất các liên kết rút gọn Link4m th
                  ┌───────────────────────────┴───────────────────────────┐
                  ▼                                                       ▼
         [ ĐÃ CÓ TRONG SERVER ]                                  [ CHƯA CÓ TRONG SERVER ]
-                 │                                                       │
-  - Tải HTML trang đích & lấy Key                         - Thu gom toàn bộ ảnh Base64 + CDN
-  - Chạy ngầm Chặng 1 (đếm ngược 63s)                     - Gửi POST /task/new lên Server
-  - Sinh Signature 96 hex qua client.js                   - Hiện bảng thông báo In-HTML (600s)
-  - Nhận quest_id thành công                              - Tự động bắn POST /links/report báo lỗi
-  - Chạy ngầm Chặng 2 (đếm ngược 20s)                                    │
-  - Nhận mã mật khẩu thật                                                ▼
-  - Gõ phím như người thật vào ô input                    [ Bạn vào http://.../admin để gán URL ]
-  - Chờ bạn giải reCAPTCHA (1 click)
-  - Tự động gửi xác minh
-  - HIỆN LINK GỐC + NÚT COPY & MỞ TAB MỚI
+                 │
+    - Tải HTML trang đích & lấy Key                         - Thu gom toàn bộ ảnh Base64 + CDN
+    - Chạy ngầm Chặng 1 (đếm ngược 63s)                     - Gửi POST /task/new lên Server
+    - Sinh Signature 96 hex qua client.js                   - Hiện bảng thông báo In-HTML (600s)
+    - Nhận quest_id thành công                              - Tự động bắn POST /links/report báo lỗi
+    - Chạy ngầm Chặng 2 (đếm ngược 20s)                                    │
+    - Nhận mã mật khẩu thật                                                ▼
+    - Gõ phím như người thật vào ô input                    [ Bạn vào [Server api](https://userscript-mapping-server--tijawi6194.replit.app/)n để gán URL ]
+    - Chờ bạn giải reCAPTCHA (1 click)
+    - Tự động gửi xác minh
+    - HIỆN LINK GỐC + NÚT COPY & MỞ TAB MỚI
 
 ✍️ Hướng dẫn gán URL trên trang https://userscript-mapping-server--tijawi6194.replit.app/
 
