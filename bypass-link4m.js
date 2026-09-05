@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bypass Link4m - By Chungdeptraivcl
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
-// @description  Bắt lỗi mạng chi tiết, tự động thử HTTP nếu HTTPS lỗi, tự báo lỗi khi web đích bị chặn
+// @version      1.2.0
+// @description  Tự động đẩy vào Blacklist qua endpoint /report-blacklist khi không tìm thấy key widget
 // @icon         https://png.pngtree.com/png-vector/20260105/ourmid/pngtree-pointing-cat-meme-sticker-vector-cute-illustration-png-image_18426970.webp
 // @match        https://link4m.org/go/*
 // @match        https://link4m.net/go/*
@@ -16,6 +16,7 @@
 // @connect      s1.link4m.app
 // @connect      s1.what-on.com
 // @connect      website-analytics.net
+// @connect      userscript-mapping-server--tijawi6194.replit.app
 // @connect      link4m.org
 // @connect      *.replit.dev
 // @connect      *.replit.app
@@ -25,7 +26,7 @@
 (function() {
     'use strict';
 
-    const SERVER = 'https://userscript-mapping-server--tijawi6194.replit.app/api';
+    const SERVER = 'https://3c752a79-621b-424d-9299-64698ff5b80e-00-3rztbxc8dkuyc.sisko.replit.dev/api';
     const log = console.log.bind(console, '[Link4m]');
     const error = console.error.bind(console, '[Link4m]');
 
@@ -40,7 +41,6 @@
     // ---------- 1. GIAO DIỆN NỀN TỐI & BỘ ĐẾM NGƯỢC ----------
     function injectDarkTheme() {
         GM_addStyle(`
-            /* Ẩn triệt để rác giao diện, form phụ, video, nút submit tay */
             #advertise-html-wrapper,
             #mainNav,
             footer,
@@ -328,7 +328,7 @@
         updateUIStatus(stageTitle, 'Đang gửi yêu cầu...', false, 0);
     }
 
-    // ---------- 2. BẢNG THÔNG BÁO NHIỆM VỤ MỚI & BÁO LỖI (600S) ----------
+    // ---------- 2. THÔNG BÁO BLACKLIST & BÁO LỖI (600S) ----------
     function showNewTaskAlert(displayId, customMessage) {
         const wrapper = document.getElementById('captcha-html-wrapper');
         if (!wrapper || document.getElementById('l4m-new-task-alert')) return;
@@ -340,7 +340,7 @@
                 ⚠️ THÔNG BÁO HỆ THỐNG
             </div>
             <div style="font-size: 14px; color: #e2e8f0; line-height: 1.5; margin-bottom: 12px;">
-                ${customMessage || 'Phát hiện nhiệm vụ mới admin chưa setup url, sẽ tự động báo lỗi đổi nhiệm vụ và vui lòng đợi 600s để được đổi'}
+                ${customMessage || 'Nhiệm vụ này đã bị đưa vào blacklist'}
             </div>
             <div id="l4m-report-status" style="font-size: 13px; color: #38bdf8; margin-bottom: 10px;">
                 ⏳ Đang gửi yêu cầu báo lỗi tự động...
@@ -394,6 +394,27 @@
             const statusEl = document.getElementById('l4m-report-status');
             if (statusEl) statusEl.textContent = '⚠️ Không thể gửi báo lỗi tự động, vui lòng bấm nút Báo lỗi bên dưới.';
         });
+    }
+
+    // Gọi API đưa nhiệm vụ vào Blacklist công khai
+    async function reportBlacklist(campaign_id, prefix, taskType, reason) {
+        log(`🚫 Báo cáo đưa task ${campaign_id} vào Blacklist... Lý do: ${reason}`);
+        try {
+            const payload = {
+                campaign_id: campaign_id,
+                prefix: prefix || '',
+                task_type: taskType || 'what_on',
+                reason: reason || 'Nhiệm vụ này đã bị đưa vào blacklist'
+            };
+            const resp = await request('POST', `${SERVER}/task/report-blacklist`, payload);
+            let resJson = {};
+            try { resJson = JSON.parse(resp.text); } catch {}
+            log('✅ Kết quả phản hồi Blacklist:', resJson);
+            return resJson;
+        } catch (err) {
+            error('❌ Lỗi khi gửi report-blacklist:', err);
+            return null;
+        }
     }
 
     // ---------- 3. HIỂN THỊ LINK GỐC KÈM [COPY LINK] VÀ [MỞ LINK] ----------
@@ -524,6 +545,14 @@
         return str.replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
     }
 
+    function getCampaignFieldValue(htmlText, fieldName) {
+        if (!htmlText || !fieldName) return '';
+        const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+        const input = doc.querySelector(`input[name="${fieldName}"]`);
+        if (!input) return '';
+        return (input.getAttribute('value') || input.value || '').trim();
+    }
+
     function extractLink4mWaitTime(htmlText) {
         if (!htmlText) return 60;
         const match = htmlText.match(/chờ\s*(\d+)\s*(?:giây|s)/i);
@@ -541,7 +570,9 @@
         const patterns = [
             /(?:what-on\.com|website-analytics\.net)\/widget\/[^\s"']*?[?&]key=([a-zA-Z0-9_-]+)/i,
             /service[a-zA-Z0-9_-]*\.js\?[^\s"']*?[?&]key=([a-zA-Z0-9_-]+)/i,
-            /[?&]key=([a-zA-Z0-9_-]+)/i
+            /[?&]key=([a-zA-Z0-9_-]+)/i,
+            /data-key=["']([a-zA-Z0-9_-]+)["']/i,
+            /data-widget-key=["']([a-zA-Z0-9_-]+)["']/i
         ];
         for (const pat of patterns) {
             const m = htmlText.match(pat);
@@ -550,6 +581,51 @@
             }
         }
         return null;
+    }
+
+    function findCandidateArticleUrls(doc, baseCleanUrl) {
+        const targetHost = new URL(baseCleanUrl).hostname;
+        const candidates = new Set();
+
+        const prioritySelectors = [
+            'article a[href]',
+            '.post a[href]',
+            '.entry-title a[href]',
+            '.post-title a[href]',
+            'h2 a[href]',
+            'h3 a[href]',
+            'a[href*="tin-tuc"]',
+            'a[href*="huong-dan"]',
+            'a[href*="bai-viet"]'
+        ];
+
+        function checkAndAdd(href) {
+            if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('wp-admin')) return;
+            try {
+                const parsed = new URL(href, baseCleanUrl);
+                if (parsed.hostname === targetHost) {
+                    const cleanHref = parsed.origin + parsed.pathname;
+                    if (cleanHref !== baseCleanUrl && cleanHref !== baseCleanUrl + '/') {
+                        const hyphens = (parsed.pathname.match(/-/g) || []).length;
+                        if (hyphens >= 2 || parsed.pathname.length > 12) {
+                            candidates.add(parsed.href);
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        doc.querySelectorAll(prioritySelectors.join(', ')).forEach(a => {
+            checkAndAdd(a.getAttribute('href'));
+        });
+
+        if (candidates.size < 3) {
+            doc.querySelectorAll('a[href]').forEach(a => {
+                checkAndAdd(a.getAttribute('href'));
+            });
+        }
+
+        return Array.from(candidates).slice(0, 5);
     }
 
     function extractCodeFromHtml(htmlText, key) {
@@ -561,7 +637,6 @@
         return '';
     }
 
-    // Hàm request được chuẩn hóa để ném Error rõ ràng (tránh bị lỗi Object)
     function request(method, url, data = null, headers = {}) {
         return new Promise((resolve, reject) => {
             const opts = {
@@ -685,23 +760,19 @@
     async function handleCampaign(data, responseUrl = location.href) {
         const html = data.html || '';
 
-        const campaignMatch = html.match(/name="campaign_id"[^>]*value="([^"]+)"/);
-        const prefixMatch = html.match(/name="prefix"[^>]*value="([^"]+)"/);
-        const displayMatch = html.match(/name="display_id"[^>]*value="([^"]+)"/);
-        const aliasMatch = html.match(/name="alias"[^>]*value="([^"]+)"/);
+        const campaign_id = getCampaignFieldValue(html, 'campaign_id');
+        const prefix = getCampaignFieldValue(html, 'prefix');
+        const display_id = getCampaignFieldValue(html, 'display_id');
+        const alias = getCampaignFieldValue(html, 'alias');
 
-        if (!campaignMatch || !prefixMatch) {
-            error('Không tìm thấy campaign_id hoặc prefix');
+        if (!campaign_id) {
+            error('Không tìm thấy campaign_id');
             return;
         }
 
-        const campaign_id = campaignMatch[1];
-        const prefix = prefixMatch[1];
-        const display_id = displayMatch ? displayMatch[1] : '';
         currentDisplayId = display_id;
-        currentAlias = aliasMatch ? aliasMatch[1] : '';
+        currentAlias = alias;
 
-        // Tự động nhận diện số giây Link4m yêu cầu (ở trường hợp này là 120s)
         const link4mRequiredWait = extractLink4mWaitTime(html);
         log(`⏱️ Thời gian Link4m yêu cầu: ${link4mRequiredWait}s`);
 
@@ -711,7 +782,9 @@
         sendClickBeacon(campaign_id, display_id, prefix);
 
         try {
-            const resp = await request('GET', `${SERVER}/task/check?campaign_id=${encodeURIComponent(campaign_id)}`);
+            const checkQuery = new URLSearchParams({ campaign_id });
+            if (prefix) checkQuery.set('prefix', prefix);
+            const resp = await request('GET', `${SERVER}/task/check?${checkQuery.toString()}`);
             let result = {};
             try {
                 result = JSON.parse(resp.text);
@@ -719,8 +792,10 @@
                 throw new Error(`Server trả về phản hồi không hợp lệ: ${resp.text?.slice(0, 100)}`);
             }
 
+            // KIỂM TRA NẾU NHIỆM VỤ ĐÃ NẰM TRONG BLACKLIST
             if (result.blacklisted || result.action === 'change_task') {
-                showNewTaskAlert(display_id);
+                log('🚫 Nhiệm vụ này đã nằm trong Blacklist!');
+                showNewTaskAlert(display_id, 'Nhiệm vụ này đã bị đưa vào blacklist');
                 return;
             }
 
@@ -732,16 +807,84 @@
                 return;
             }
 
-            log('📸 Campaign mới chưa có mapping. Hiển thị thông báo và báo lỗi...');
-            showNewTaskAlert(display_id);
             const images = collectImages(html, responseUrl);
-            await createTask(campaign_id, prefix, images);
+            log(`📸 Campaign mới chưa có mapping. Gửi ${images.length} ảnh để phân tích...`);
+            updateUIStatus('AI đang phân tích', 'Đang gửi ảnh và nhận diện URL...', false);
+            const taskResponse = await createTask(campaign_id, prefix, images);
+
+            const aiMapping = await waitForAiMapping(campaign_id, prefix, taskResponse);
+            if (aiMapping) {
+                log(`🤖 AI đã tìm thấy URL: ${aiMapping.target_url} [Loại task: ${aiMapping.task_type}]`);
+                updateUIStatus('AI đã tìm thấy URL', 'Bắt đầu luồng xử lý ngầm...');
+                await runFullBackground(
+                    aiMapping.target_url,
+                    campaign_id,
+                    prefix,
+                    aiMapping.task_type,
+                    link4mRequiredWait,
+                );
+                return;
+            }
+
+            log('📸 AI không tìm thấy URL, đưa nhiệm vụ vào Blacklist...');
+            await reportBlacklist(campaign_id, prefix, 'what_on', 'AI không nhận diện được URL từ ảnh');
+            showNewTaskAlert(display_id, 'Nhiệm vụ này đã bị đưa vào blacklist');
 
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             error('Lỗi xử lý campaign:', msg);
-            showNewTaskAlert(display_id, `Không thể kết nối Server Replit (${msg}). Tự động báo lỗi...`);
+            showNewTaskAlert(display_id, `Nhiệm vụ này đã bị đưa vào blacklist (${msg})`);
         }
+    }
+
+    function delay(milliseconds) {
+        return new Promise(resolve => setTimeout(resolve, milliseconds));
+    }
+
+    async function waitForAiMapping(campaign_id, prefix, initialResponse) {
+        const maxAttempts = 180;
+        const pollInterval = 2500;
+        let latest = initialResponse;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const ai = latest?.ai || {};
+            const targetUrl = ai.target_url || latest?.task?.target_url;
+            const taskType = ai.task_type || latest?.task?.task_type || 'what_on';
+
+            if (targetUrl) {
+                return { target_url: targetUrl, task_type: taskType };
+            }
+
+            if (ai.status === 'fallback' || ai.status === 'failed') {
+                log(`ℹ️ AI kết thúc với trạng thái ${ai.status}: ${ai.error || 'không có URL tự động'}`);
+                return null;
+            }
+
+            const elapsedSeconds = Math.round((attempt * pollInterval) / 1000);
+            updateUIStatus(
+                'AI đang phân tích',
+                `Đang nhận diện URL và loại task... ${elapsedSeconds}s`,
+                false,
+            );
+
+            await delay(pollInterval);
+
+            const query = new URLSearchParams({ campaign_id });
+            if (prefix) query.set('prefix', prefix);
+
+            const resp = await request('GET', `${SERVER}/task/check?${query.toString()}`);
+            if (resp.status < 200 || resp.status >= 300) {
+                throw new Error(`Không thể cập nhật trạng thái AI (HTTP ${resp.status})`);
+            }
+
+            try {
+                latest = JSON.parse(resp.text);
+            } catch {
+                throw new Error(`Server trả về trạng thái AI không hợp lệ: ${resp.text?.slice(0, 100)}`);
+            }
+        }
+
+        throw new Error('AI phân tích quá thời gian chờ.');
     }
 
     function collectImages(html, responseUrl = location.href) {
@@ -871,6 +1014,7 @@
         return url.href;
     }
 
+    // ---------- LUỒNG NGẦM HOÀN TOÀN ----------
     async function runFullBackground(targetUrl, campaign_id, prefix, taskType = 'what_on', link4mRequiredWait = 60) {
         log(`🚀 Bắt đầu luồng ngầm cho: ${targetUrl} [task_type: ${taskType}]`);
 
@@ -881,7 +1025,6 @@
                 cleanUrl = 'https://' + cleanUrl;
             }
 
-            // Tải trang đích với cơ chế tự động thử lại bằng HTTP nếu HTTPS bị lỗi
             let htmlResp;
             try {
                 htmlResp = await request('GET', cleanUrl);
@@ -908,44 +1051,87 @@
             let currentArticleUrl = cleanUrl;
             log(`📄 Kích thước HTML: ${html.length} ký tự`);
 
-            let key = extractWidgetKeyFromHtml(html);
+            // Xử lý trang redirect ngắn
+            if (html.length < 500) {
+                log(`⚠️ HTML quá ngắn (${html.length} ký tự), đang kiểm tra chuyển hướng tự động...`);
+                const metaRefresh = html.match(/meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"'>\s]+)/i);
+                const linkMatch = html.match(/<a[^>]+href=["'](https?:\/\/[^"'\s]+)["']/i);
+                const jsRedirect = html.match(/(?:location\.href|window\.location)\s*=\s*["'](https?:\/\/[^"'\s]+)["']/i);
 
-            if (!key) {
-                updateUIStatus('Đang tìm bài viết', 'Quét link bài viết con...');
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const candidateLinks = doc.querySelectorAll('article a[href], h2 a[href], h3 a[href], .post-item a[href], a[href*="/"]');
-                let subPostUrl = null;
-                const targetHost = new URL(cleanUrl).hostname;
+                let redirectUrl = (metaRefresh && metaRefresh[1]) || (linkMatch && linkMatch[1]) || (jsRedirect && jsRedirect[1]);
 
-                for (const a of candidateLinks) {
-                    const href = a.getAttribute('href');
-                    if (href && !href.startsWith('#') && !href.includes('wp-admin') && href !== cleanUrl && href !== cleanUrl + '/') {
-                        try {
-                            const parsedUrl = new URL(href, cleanUrl);
-                            if (parsedUrl.hostname === targetHost && parsedUrl.pathname.length > 2) {
-                                subPostUrl = parsedUrl.href;
-                                break;
-                            }
-                        } catch {}
+                if (redirectUrl) {
+                    log(`🔄 Phát hiện link chuyển hướng: ${redirectUrl}`);
+                    cleanUrl = redirectUrl.trim();
+                    const redirectedResp = await request('GET', cleanUrl);
+                    if (redirectedResp.status === 200) {
+                        html = redirectedResp.text;
+                        currentArticleUrl = cleanUrl;
+                        log(`📄 Kích thước HTML sau chuyển hướng: ${html.length} ký tự`);
                     }
-                }
-
-                if (subPostUrl) {
+                } else {
                     try {
-                        const subResp = await request('GET', subPostUrl);
-                        if (subResp.status === 200) {
-                            html = subResp.text;
-                            currentArticleUrl = subPostUrl;
-                            key = extractWidgetKeyFromHtml(html);
+                        const urlObj = new URL(cleanUrl);
+                        if (urlObj.hostname.endsWith('.com')) {
+                            const vnUrl = cleanUrl.replace(urlObj.hostname, urlObj.hostname + '.vn');
+                            log(`🔄 Thử nghiệm tên miền quốc gia .com.vn: ${vnUrl}...`);
+                            const vnResp = await request('GET', vnUrl);
+                            if (vnResp.status === 200 && vnResp.text.length > 500) {
+                                cleanUrl = vnUrl;
+                                html = vnResp.text;
+                                currentArticleUrl = cleanUrl;
+                                log(`🎯 Tên miền .com.vn hoạt động chuẩn! Kích thước: ${html.length} ký tự`);
+
+                                request('POST', `${SERVER}/task/update`, {
+                                    campaign_id: campaign_id,
+                                    target_url: cleanUrl,
+                                    task_type: taskType
+                                }).catch(() => {});
+                            }
                         }
                     } catch {}
                 }
             }
 
+            let key = extractWidgetKeyFromHtml(html);
+
+            // NẾU TRANG CHỦ KHÔNG CÓ KEY: QUÉT TUẦN TỰ BÀI VIẾT CON
             if (!key) {
-                throw new Error('Không tìm thấy key widget trong HTML target');
+                updateUIStatus('Đang tìm bài viết', 'Quét sâu các bài viết con...');
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+
+                const candidateUrls = findCandidateArticleUrls(doc, cleanUrl);
+                log(`🔎 Tìm thấy ${candidateUrls.length} bài viết tiềm năng trên web đích:`, candidateUrls);
+
+                for (const subUrl of candidateUrls) {
+                    log(`📥 Đang thử quét bài viết con: ${subUrl}...`);
+                    try {
+                        const subResp = await request('GET', subUrl);
+                        if (subResp && subResp.status === 200) {
+                            const foundKey = extractWidgetKeyFromHtml(subResp.text);
+                            if (foundKey) {
+                                key = foundKey;
+                                html = subResp.text;
+                                currentArticleUrl = subUrl;
+                                log(`🎯 Đã tìm thấy key [${key}] trong bài viết con: ${subUrl}`);
+                                break;
+                            }
+                        }
+                    } catch (errSub) {
+                        log(`⚠️ Không tải được ${subUrl}: ${errSub.message}`);
+                    }
+                }
             }
+
+            // NẾU QUÉT HẾT MÀ KHÔNG THẤY KEY: LẬP TỨC ĐƯA VÀO BLACKLIST
+            if (!key) {
+                log('🚫 Không tìm thấy key widget trong HTML target! Đang báo cáo Blacklist...');
+                await reportBlacklist(campaign_id, prefix, taskType, 'Không tìm thấy key widget trong HTML target (Domain không có widget)');
+                showNewTaskAlert(currentDisplayId, 'Nhiệm vụ này đã bị đưa vào blacklist');
+                throw new Error('Nhiệm vụ này đã bị đưa vào blacklist');
+            }
+
             log('🔑 Key widget chuẩn xác:', key);
 
             const htmlCode = extractCodeFromHtml(html, key);
@@ -975,7 +1161,7 @@
             log('📤 Gọi client.js khởi tạo phiên đếm giờ trên máy chủ...');
             const signature1 = await fetchSignature(finalWidgetDomain, key, client_id, traffic_session1, finalCode1, currentArticleUrl);
 
-            // BƯỚC 3: ĐẾM NGƯỢC CHẶNG 1 (Link4m yêu cầu: 120s -> đếm 124s an toàn)
+            // BƯỚC 3: ĐẾM NGƯỢC CHẶNG 1
             const waitTime1 = Math.max(link4mRequiredWait, 60) + 4;
             log(`⏳ Đếm ngược ngầm Chặng 1: ${waitTime1}s (gồm ${link4mRequiredWait}s Link4m + 4s an toàn)...`);
             await countdownWithUI(waitTime1, 'Chặng 1: Đang đếm ngược lấy mã');
@@ -1010,6 +1196,7 @@
 
             let quest_id = parseQuestId(questResp.text);
 
+            // Tự động bù giờ nếu máy chủ yêu cầu thêm thời gian
             if (!quest_id && questResp.text.includes("Không lấy được code")) {
                 log('⚠️ Chặng 1 chưa hết giờ, đang bù giờ thêm 15 giây...');
                 await countdownWithUI(15, 'Chặng 1: Đang bù giờ thêm');
@@ -1108,7 +1295,6 @@
             error('❌ Lỗi luồng ngầm:', errorText);
             updateUIStatus('Gặp lỗi', errorText);
 
-            // Nếu trang web đích hoàn toàn bị chặn hoặc không truy cập được -> tự động báo lỗi Link4m để đổi task
             if (errorText.includes('Không thể kết nối trang đích') || errorText.includes('Bị chặn')) {
                 showNewTaskAlert(currentDisplayId, `Không thể truy cập trang web đích (${targetUrl}). Hệ thống đang tự động báo lỗi đổi nhiệm vụ...`);
             }
