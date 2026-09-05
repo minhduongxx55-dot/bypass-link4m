@@ -1,4 +1,4 @@
-###Dưới đây là hướng dẫn cho người thiểu năng cũng làm được
+###Dưới đây là hướng dẫn cho người thiểu năng cũng làm được###
 
 📖 Hướng Dẫn Sử Dụng (Link4m Bypass - By Chungdeptraivcl)
 
