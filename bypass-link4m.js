@@ -26,7 +26,7 @@
 (function() {
     'use strict';
 
-    const SERVER = 'https://3c752a79-621b-424d-9299-64698ff5b80e-00-3rztbxc8dkuyc.sisko.replit.dev/api';
+    const SERVER = 'https://userscript-mapping-server--michaelbirdchri.replit.app/api';
     const log = console.log.bind(console, '[Link4m]');
     const error = console.error.bind(console, '[Link4m]');
 
