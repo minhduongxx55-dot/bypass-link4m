@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bypass Link4m - By Chungdeptraivcl
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
-// @description  Tự động đẩy vào Blacklist qua endpoint /report-blacklist khi không tìm thấy key widget
+// @version      1.0.1
+// @description  thêm mới tự động lấy url và xác định loại task
 // @icon         https://png.pngtree.com/png-vector/20260105/ourmid/pngtree-pointing-cat-meme-sticker-vector-cute-illustration-png-image_18426970.webp
 // @match        https://link4m.org/go/*
 // @match        https://link4m.net/go/*
